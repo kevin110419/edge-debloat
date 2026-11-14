@@ -9,21 +9,41 @@
       Status   현재 상태를 점검합니다(읽기 전용, 관리자 권한 불필요).
       Apply    디블로트를 적용합니다. Edge 정책은 분류별로 적용 여부를 묻고(Y/N),
                적용 직전 상태를 자동으로 백업합니다.
-      Backup   정책, 서비스, 예약 작업, flags, 프로필 설정을 backups\ 아래에 저장합니다.
+      Backup   정책, 서비스, 예약 작업, flags, 프로필 설정을 백업 폴더에 저장합니다.
       Restore  백업 시점의 상태로 되돌립니다(기본: 가장 최근 백업).
       Revert   이 스크립트가 바꾼 항목을 Edge 기본값으로 되돌립니다(백업 불필요).
       List     백업 목록을 보여 줍니다.
+      Schedule    자동 백업 일정을 Windows 예약 작업으로 등록합니다(기본: 매일, 14개 보존).
+      Unschedule  자동 백업 일정을 삭제합니다.
 
     Parts (Apply / Restore / Revert 에서 범위를 좁힐 때)
       Policies    edge://policy 에 보이는 정책(Edge, EdgeUpdate)과 Windows 진단 데이터 수준
       Background  업데이트/권한 상승 서비스, 예약 작업, 자동 실행 항목
       Settings    edge://flags 와 프로필 설정(Local State, Preferences, Secure Preferences)
 
+.PARAMETER BackupRoot
+    백업을 저장하고 찾는 폴더. 생략하면 사용자의 '문서' 폴더 아래 Edge-Debloat-Backups.
+    Backup 뿐 아니라 List, Restore, 그리고 Apply / Restore / Revert 의 자동 백업에도 적용됩니다.
+
 .PARAMETER BackupPath
-    Restore 에 쓸 백업. 폴더 경로 또는 backups\ 아래의 폴더 이름. 생략하면 가장 최근 백업.
+    Restore 에 쓸 백업. 폴더 경로 또는 백업 폴더 아래의 폴더 이름. 생략하면 가장 최근 백업.
 
 .PARAMETER Label
     Backup 폴더 이름 뒤에 붙일 설명.
+
+.PARAMETER Interval
+    Schedule 의 자동 백업 주기. Hourly, Daily, Weekly 중 하나. 기본 Daily.
+
+.PARAMETER At
+    Schedule 의 실행 시각(HH:mm). 기본 12:00. 그 시각에 PC 가 꺼져 있었다면 켜진 뒤에 실행됩니다.
+
+.PARAMETER DayOfWeek
+    Interval 이 Weekly 일 때의 요일. 기본 Sunday.
+
+.PARAMETER Keep
+    보존할 백업 개수. 기본 14, 0 이면 지우지 않습니다. 같은 라벨의 백업끼리만 세어 오래된 것부터
+    지우므로, 자동 백업(라벨 auto)의 정리가 직접 만든 백업이나 pre-apply 백업을 지우지 않습니다.
+    Schedule 에서는 항상 적용되고, Backup 에서는 -Keep 을 직접 적었을 때만 적용됩니다.
 
 .PARAMETER CloseEdge
     Edge 가 실행 중이면 종료합니다(창을 닫아 보고, 남은 프로세스는 강제 종료).
@@ -44,16 +64,37 @@
     powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Backup -Label before-reinstall
 
 .EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Backup -BackupRoot D:\Backups\Edge
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Schedule
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Schedule -Interval Weekly -DayOfWeek Monday -At 09:00 -Keep 8
+
+.EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Restore -BackupPath 20261114-120000-before-reinstall -CloseEdge
 #>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('Status', 'Apply', 'Backup', 'Restore', 'Revert', 'List')]
+    [ValidateSet('Status', 'Apply', 'Backup', 'Restore', 'Revert', 'List', 'Schedule', 'Unschedule')]
     [string]$Action = 'Status',
 
+    [string]$BackupRoot,
     [string]$BackupPath,
     [string]$Label,
+
+    [ValidateSet('Hourly', 'Daily', 'Weekly')]
+    [string]$Interval = 'Daily',
+
+    [ValidatePattern('^([01]?\d|2[0-3]):[0-5]\d$')]
+    [string]$At = '12:00',
+
+    [System.DayOfWeek]$DayOfWeek = 'Sunday',
+
+    [ValidateRange(0, 1000)]
+    [int]$Keep = 14,
 
     [ValidateSet('Policies', 'Background', 'Settings')]
     [string[]]$Parts = @('Policies', 'Background', 'Settings'),
@@ -64,6 +105,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Backup 은 -Keep 을 직접 적었을 때만 오래된 백업을 정리합니다.
+$KeepSpecified = $PSBoundParameters.ContainsKey('Keep')
+
+# 자동 백업 예약 작업의 이름과, 자동 백업에 붙는 라벨.
+$BackupTaskName = 'Edge-Debloat Backup'
+$AutoLabel      = 'auto'
 
 # =============================================================================
 #  정의
@@ -259,8 +307,17 @@ $RegistryKeys = @(
 # 프로필 폴더마다 백업하는 설정 파일.
 $ProfileFiles = @('Preferences', 'Secure Preferences')
 
-$BackupRoot = Join-Path $PSScriptRoot 'backups'
-$UserData   = Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'
+# 백업 폴더: -BackupRoot 로 지정하고, 생략하면 '문서' 아래 Edge-Debloat-Backups 입니다.
+# '문서' 가 OneDrive 등으로 옮겨져 있으면 옮겨진 위치를 따릅니다.
+if ($BackupRoot) {
+    $BackupRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BackupRoot)
+}
+else {
+    $documents = [Environment]::GetFolderPath('MyDocuments')
+    if (-not $documents) { $documents = Join-Path $env:USERPROFILE 'Documents' }
+    $BackupRoot = Join-Path $documents 'Edge-Debloat-Backups'
+}
+$UserData   =Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'
 $Utf8NoBom  = New-Object System.Text.UTF8Encoding($false)
 
 # =============================================================================
@@ -625,6 +682,85 @@ function Read-Manifest {
     [IO.File]::ReadAllText((Join-Path $Dir 'manifest.json'), $Utf8NoBom) | ConvertFrom-Json
 }
 
+# 같은 라벨의 백업 중 최근 $Count 개만 남기고 오래된 것부터 지웁니다.
+# 이 스크립트가 만든 폴더(날짜-시각 이름 + manifest.json)만 대상입니다.
+function Remove-OldBackups {
+    param([string]$BackupLabel, [int]$Count)
+    if ($Count -le 0) { return }
+
+    $same = @(Get-EdgeBackups | Where-Object {
+            if ($_.Name -notmatch '^\d{8}-\d{6}') { return $false }
+            try { [string](Read-Manifest $_.FullName).Label -eq [string]$BackupLabel } catch { $false }
+        })
+    $excess = $same.Count - $Count
+    if ($excess -le 0) { return }
+
+    foreach ($old in $same[0..($excess - 1)]) {
+        try {
+            Remove-Item -LiteralPath $old.FullName -Recurse -Force
+            Write-Step 'OK' "오래된 백업 삭제: $($old.Name)"
+        }
+        catch { Write-Step 'FAIL' "$($old.Name) 삭제 실패: $($_.Exception.Message)" }
+    }
+}
+
+# =============================================================================
+#  Schedule / Unschedule
+# =============================================================================
+
+function Get-ScheduleSummary {
+    $when = switch ($Interval) {
+        'Hourly' { "매시간 (기준 $At)" }
+        'Daily'  { "매일 $At" }
+        'Weekly' { "매주 $DayOfWeek $At" }
+    }
+    "$when, 보존 $(if ($Keep -gt 0) { "${Keep}개" } else { '무제한' })"
+}
+
+function Invoke-Schedule {
+    $time    = [datetime]::Today.Add([timespan]::Parse($At))
+    $trigger = switch ($Interval) {
+        'Hourly' { New-ScheduledTaskTrigger -Once -At $time -RepetitionInterval (New-TimeSpan -Hours 1) }
+        'Daily'  { New-ScheduledTaskTrigger -Daily -At $time }
+        'Weekly' { New-ScheduledTaskTrigger -Weekly -DaysOfWeek $DayOfWeek -At $time }
+    }
+
+    # 경로 끝의 \ 는 닫는 따옴표를 이스케이프하므로 떼어 냅니다.
+    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" Backup -Label {1} -Keep {2} -BackupRoot "{3}"' -f `
+        $PSCommandPath, $AutoLabel, $Keep, $BackupRoot.TrimEnd('\')
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
+
+    # 프로필 설정과 HKCU 를 읽어야 하므로 지금 사용자로, 로그온해 있을 때만 실행합니다.
+    $isAdmin   = Test-Admin
+    $runLevel  = if ($isAdmin) { 'Highest' } else { 'Limited' }
+    $user      = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel $runLevel
+    $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+
+    Write-Section '자동 백업 일정'
+    Register-ScheduledTask -TaskName $BackupTaskName -Action $action -Trigger $trigger -Principal $principal `
+        -Settings $settings -Description "Edge-Debloat 자동 백업: $(Get-ScheduleSummary)" -Force | Out-Null
+
+    Write-Step 'OK' "등록: $(Get-ScheduleSummary)"
+    Write-Step 'INFO' "실행 계정: $user"
+    Write-Step 'INFO' "저장 위치: $BackupRoot"
+    Write-Step 'INFO' "스크립트: $PSCommandPath (옮기면 Schedule 을 다시 실행해야 함)"
+    if (-not $isAdmin) {
+        Write-Step 'WARN' '관리자 권한 없이 등록해, 자동 백업에서 예약 작업 목록이 빠질 수 있습니다'
+    }
+}
+
+function Invoke-Unschedule {
+    Write-Section '자동 백업 일정'
+    if (-not (Get-ScheduledTask -TaskName $BackupTaskName -ErrorAction SilentlyContinue)) {
+        Write-Step 'SKIP' '등록된 일정 없음'
+        return
+    }
+    Unregister-ScheduledTask -TaskName $BackupTaskName -Confirm:$false
+    Write-Step 'OK' '일정 삭제(이미 만든 백업은 그대로 둠)'
+}
+
 function Resolve-Backup {
     if ($BackupPath) {
         foreach ($candidate in @($BackupPath, (Join-Path $BackupRoot $BackupPath))) {
@@ -866,10 +1002,10 @@ function Invoke-Revert {
         Write-Section '정책'
         $removed = 0
         foreach ($name in @((Get-FlatPolicies).Keys)) { if (Remove-RegValue $EdgePolicyKey $name) { $removed++ } }
-        Write-Step 'OK' "Edge 정책 $removed개 삭제"
+        Write-Step 'OK' "Edge 정책 ${removed}개 삭제"
         $removed = 0
         foreach ($name in $UpdatePolicies.Keys) { if (Remove-RegValue $UpdatePolicyKey $name) { $removed++ } }
-        Write-Step 'OK' "Edge Update 정책 $removed개 삭제"
+        Write-Step 'OK' "Edge Update 정책 ${removed}개 삭제"
         Write-Step 'INFO' 'Windows 진단 데이터 수준(AllowTelemetry)은 Windows 전체 설정이라 그대로 둡니다'
     }
 
@@ -981,6 +1117,20 @@ function Invoke-Status {
 
     Write-Section '백업'
     $backups = Get-EdgeBackups
+    Write-Step 'INFO' "위치: $BackupRoot"
+    $backupTask = Get-ScheduledTask -TaskName $BackupTaskName -ErrorAction SilentlyContinue
+    if (-not $backupTask) {
+        Write-Step 'INFO' '자동 백업 일정 없음(Schedule 로 등록)'
+    }
+    else {
+        $taskInfo = $backupTask | Get-ScheduledTaskInfo
+        Write-Step $(if ("$($backupTask.State)" -eq 'Disabled') { 'WARN' } else { 'OK' }) "$($backupTask.Description) [$($backupTask.State)]"
+        Write-Step 'INFO' "다음 실행: $($taskInfo.NextRunTime)"
+        # 267011 = 아직 한 번도 실행되지 않음
+        if ($taskInfo.LastTaskResult -ne 267011) {
+            Write-Step $(if ($taskInfo.LastTaskResult -eq 0) { 'INFO' } else { 'WARN' }) "마지막 실행: $($taskInfo.LastRunTime), 결과 코드 $($taskInfo.LastTaskResult)"
+        }
+    }
     if ($backups.Count -eq 0) { Write-Step 'INFO' '백업 없음' }
     else { Write-Step 'INFO' "$($backups.Count)개, 최근: $($backups[-1].Name)" }
     Write-Host ''
@@ -1012,7 +1162,12 @@ function Invoke-List {
 switch ($Action) {
     'Status'  { Invoke-Status }
     'Apply'   { Invoke-Apply }
-    'Backup'  { New-EdgeBackup -BackupLabel $Label | Out-Null }
+    'Backup'  {
+        New-EdgeBackup -BackupLabel $Label | Out-Null
+        if ($KeepSpecified) { Remove-OldBackups -BackupLabel $Label -Count $Keep }
+    }
+    'Schedule'   { Invoke-Schedule }
+    'Unschedule' { Invoke-Unschedule }
     'Restore' { Invoke-Restore }
     'Revert'  { Invoke-Revert }
     'List'    { Invoke-List }

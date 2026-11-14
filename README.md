@@ -38,17 +38,24 @@ Unblock-File .\Edge-Debloat.ps1
 |---|---|
 | `Status` | 정책·서비스·예약 작업·flags가 목표와 얼마나 맞는지 점검합니다(읽기 전용). 생략하면 이 동작입니다. |
 | `Apply` | 디블로트를 적용합니다. 직전 상태를 자동으로 백업합니다. |
-| `Backup` | 현재 상태를 `backups\` 아래에 저장합니다. |
+| `Backup` | 현재 상태를 백업 폴더에 저장합니다. |
 | `Restore` | 백업 시점의 상태로 되돌립니다. 기본은 가장 최근 백업입니다. |
 | `Revert` | 이 스크립트가 바꾼 항목을 Edge 기본값으로 되돌립니다. 백업이 없어도 됩니다. |
 | `List` | 백업 목록을 보여 줍니다. |
+| `Schedule` | 자동 백업 일정을 Windows 예약 작업으로 등록합니다. 기본은 매일, 14개 보존입니다. |
+| `Unschedule` | 자동 백업 일정을 삭제합니다. 이미 만든 백업은 그대로 둡니다. |
 
 | 옵션 | 설명 |
 |---|---|
 | `-Parts` | `Apply`·`Restore`·`Revert`의 범위를 좁힙니다. `Policies`, `Background`, `Settings` 중에서 고르며 기본은 전부입니다. |
 | `-CloseEdge` | Edge가 실행 중이면 종료합니다. 창을 닫아 보고, 남은 프로세스는 강제 종료합니다. |
-| `-BackupPath` | `Restore`에 쓸 백업입니다. 폴더 경로나 `backups\` 아래의 폴더 이름을 적습니다. |
+| `-BackupRoot` | 백업을 저장하고 찾는 폴더입니다. 생략하면 사용자의 "문서" 폴더 아래 `Edge-Debloat-Backups`입니다. |
+| `-BackupPath` | `Restore`에 쓸 백업입니다. 폴더 경로나 백업 폴더 아래의 폴더 이름을 적습니다. |
 | `-Label` | `Backup` 폴더 이름 뒤에 붙일 설명입니다. |
+| `-Interval` | `Schedule`의 자동 백업 주기입니다. `Hourly`, `Daily`, `Weekly` 중에서 고르며 기본은 `Daily`입니다. |
+| `-At` | `Schedule`의 실행 시각(`HH:mm`)입니다. 기본은 `12:00`입니다. |
+| `-DayOfWeek` | `-Interval Weekly`일 때의 요일입니다. 기본은 `Sunday`입니다. |
+| `-Keep` | 보존할 백업 개수입니다. 기본은 14이고, 0이면 지우지 않습니다. |
 | `-NoBackup` | `Apply`·`Restore`·`Revert` 직전의 자동 백업을 건너뜁니다. |
 | `-Force` | 질문을 건너뜁니다. `Apply`는 모든 정책 분류를 적용하고, `Restore`·`Revert`는 확인 없이 진행합니다. |
 
@@ -66,6 +73,18 @@ Unblock-File .\Edge-Debloat.ps1
 
 # 이름을 붙여 백업
 .\Edge-Debloat.ps1 Backup -Label before-reinstall
+
+# 다른 폴더에 백업
+.\Edge-Debloat.ps1 Backup -BackupRoot D:\Backups\Edge
+
+# 자동 백업 등록 (매일 12:00, 14개 보존)
+.\Edge-Debloat.ps1 Schedule
+
+# 매주 월요일 09:00, 8개 보존으로 등록
+.\Edge-Debloat.ps1 Schedule -Interval Weekly -DayOfWeek Monday -At 09:00 -Keep 8
+
+# 자동 백업 해제
+.\Edge-Debloat.ps1 Unschedule
 
 # 가장 최근 백업으로 복원
 .\Edge-Debloat.ps1 Restore -CloseEdge
@@ -110,7 +129,9 @@ AI 관련 flag 9개를 끕니다. Edge가 실행 중이면 이 단계는 건너�
 
 ## 백업과 복원
 
-`Backup`은 `backups\<날짜-시각>[-라벨]\` 폴더에 아래 내용을 저장합니다.
+백업 폴더는 기본적으로 사용자의 "문서" 폴더 아래 `Edge-Debloat-Backups`이고, `-BackupRoot`로 바꿀 수 있습니다. "문서"가 OneDrive 등으로 옮겨져 있으면 옮겨진 위치를 따릅니다. `-BackupRoot`는 `Backup`뿐 아니라 `List`, `Restore`, 그리고 `Apply`·`Restore`·`Revert`의 자동 백업에도 적용되므로, 다른 폴더에 저장한 백업을 찾을 때도 같은 값을 줘야 합니다.
+
+`Backup`은 그 아래 `<날짜-시각>[-라벨]\` 폴더에 아래 내용을 저장합니다.
 
 | 범위 | 저장하는 것 |
 |---|---|
@@ -124,6 +145,17 @@ AI 관련 flag 9개를 끕니다. Edge가 실행 중이면 이 단계는 건너�
 
 즐겨찾기, 방문 기록, 비밀번호, 검색 엔진 목록은 설정값이 아니라서 백업하지 않습니다.
 
+### 자동 백업과 보존 개수
+
+`Schedule`은 `Edge-Debloat Backup`이라는 Windows 예약 작업을 등록합니다. 다시 실행하면 기존 일정을 새 값으로 덮어쓰고, `Status`가 일정과 다음 실행 시각, 마지막 실행 결과를 보여 줍니다.
+
+- **일정**: `-Interval`(기본 `Daily`), `-At`(기본 `12:00`), `-DayOfWeek`(주간일 때, 기본 `Sunday`)로 정합니다. 그 시각에 PC가 꺼져 있었다면 켜진 뒤에 실행됩니다.
+- **보존 개수**: `-Keep`(기본 14)을 넘으면 오래된 자동 백업부터 지웁니다. 0이면 지우지 않습니다.
+- **지우는 범위**: 같은 라벨의 백업끼리만 셉니다. 자동 백업은 라벨이 `auto`라서, 직접 만든 백업이나 `pre-apply`·`pre-restore` 백업은 지우지 않습니다.
+- **직접 백업할 때**: `Backup`은 `-Keep`을 직접 적었을 때만 정리합니다. 예를 들어 `Backup -Label weekly -Keep 4`는 `weekly` 백업을 4개만 남깁니다.
+- **실행 계정**: 등록한 사용자가 로그온해 있을 때만 실행됩니다. 관리자 권한 없이 등록할 수도 있지만, 그 경우 자동 백업에서 예약 작업 목록이 빠질 수 있습니다.
+- **경로 고정**: 스크립트 위치와 `-BackupRoot` 값이 등록 시점에 예약 작업에 기록됩니다. 스크립트를 옮기거나 백업 폴더를 바꾸려면 `Schedule`을 다시 실행하세요.
+
 ## 알아둘 점
 
 - **직접 해야 하는 설정**: 기본 검색 엔진(`edge://settings/search`)과 SmartScreen(`edge://settings/privacy`)은 개인 PC에서 정책으로 강제할 수 없어 Edge 설정에서 직접 바꿔야 합니다. SmartScreen을 끄면 방문 URL이 MS로 전송되지 않지만 피싱·악성 다운로드 차단도 사라집니다.
@@ -133,4 +165,5 @@ AI 관련 flag 9개를 끕니다. Edge가 실행 중이면 이 단계는 건너�
 - **다시 켜질 수 있음**: Windows 업데이트나 Edge 재설치·복구가 서비스와 예약 작업을 되살릴 수 있습니다. `Status`로 확인하고 `Apply`를 다시 실행하면 됩니다.
 - **보안 DNS 분류**: 다른 분류를 적용하면서 "보안 DNS"만 빼면, Edge가 관리되는 브라우저로 판단해 보안 DNS를 끄고 잠급니다.
 - **다른 PC로 복원**: `Secure Preferences`는 PC에 묶인 무결성 값으로 보호되므로, 다른 PC에 복원하면 일부 설정이 초기화될 수 있습니다.
-- **백업 폴더는 개인 데이터**: 확장 설정 등 프로필 정보가 들어 있어 `.gitignore`에 `backups/`가 등록돼 있습니다.
+- **백업 폴더는 개인 데이터**: 확장 설정 등 프로필 정보가 들어 있습니다. "문서"가 OneDrive와 동기화되고 있다면 백업도 함께 업로드되므로, 원하지 않으면 `-BackupRoot`로 다른 폴더를 지정하세요. 저장소 안의 `backups/`는 `.gitignore`에 등록돼 있습니다.
+- **다른 계정으로 관리자 권한을 얻은 경우**: "문서"와 프로필 설정이 그 관리자 계정의 것을 가리킵니다. 평소 쓰는 계정이 관리자 그룹에 속해 있으면 해당되지 않습니다.
