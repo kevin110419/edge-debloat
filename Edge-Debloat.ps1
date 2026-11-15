@@ -7,7 +7,7 @@
 .DESCRIPTION
     Action
       Status   현재 상태를 점검합니다(읽기 전용, 관리자 권한 불필요).
-      Apply    디블로트를 적용합니다. Edge 정책은 분류별로 적용 여부를 묻고(Y/N),
+      Apply    (기본값) 디블로트를 적용합니다. Edge 정책은 분류별로 적용 여부를 묻고(Y/N),
                적용 직전 상태를 자동으로 백업합니다.
       Backup   정책, 서비스, 예약 작업, flags, 프로필 설정을 백업 폴더에 저장합니다.
       Restore  백업 시점의 상태로 되돌립니다(기본: 가장 최근 백업).
@@ -79,7 +79,7 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet('Status', 'Apply', 'Backup', 'Restore', 'Revert', 'List', 'Schedule', 'Unschedule')]
-    [string]$Action = 'Status',
+    [string]$Action = 'Apply',
 
     [string]$BackupRoot,
     [string]$BackupPath,
