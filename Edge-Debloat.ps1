@@ -2,57 +2,47 @@
 <#
 .SYNOPSIS
     Microsoft Edge 디블로트: MS 서비스 연동, Copilot/AI, 데이터 수집, 광고/뉴스,
-    업데이트 및 백그라운드 상주 요소를 끄고, Edge 설정 전체를 백업/복원합니다.
+    업데이트 및 백그라운드 상주 요소를 끕니다. 1회성 적용을 전제로 하며 백업/복원 기능은 없습니다.
 
 .DESCRIPTION
     Action
       Status   현재 상태를 점검합니다(읽기 전용, 관리자 권한 불필요).
-      Apply    (기본값) 디블로트를 적용합니다. Edge 정책은 분류별로 적용 여부를 묻고(Y/N),
-               적용 직전 상태를 자동으로 백업합니다.
-      Backup   정책, 서비스, 예약 작업, flags, 프로필 설정을 백업 폴더에 저장합니다.
-      Restore  백업 시점의 상태로 되돌립니다(기본: 가장 최근 백업).
-      Revert   이 스크립트가 바꾼 항목을 Edge 기본값으로 되돌립니다(백업 불필요).
-      List     백업 목록을 보여 줍니다.
-      Schedule    자동 백업 일정을 Windows 예약 작업으로 등록합니다(기본: 매일, 14개 보존).
-      Unschedule  자동 백업 일정을 삭제합니다.
+      Apply    (기본값) 디블로트를 적용합니다. Edge 정책은 분류별로 적용 여부를 묻습니다(Y/N).
+      Revert   이 스크립트가 바꾼 항목을 Edge 기본값으로 되돌립니다.
+      Search      검색 엔진을 추가하고 기본 검색 엔진을 바꿉니다(ManagedSearchEngines 정책).
+                  -SearchEngines 를 생략하면 목록에서 고르도록 묻습니다.
+      SearchReset Search 로 지정한 검색 엔진 정책을 지웁니다.
 
-    Parts (Apply / Restore / Revert 에서 범위를 좁힐 때)
+    Parts (Apply / Revert 에서 범위를 좁힐 때)
       Policies    edge://policy 에 보이는 정책(Edge, EdgeUpdate)과 Windows 진단 데이터 수준
-      Background  업데이트/권한 상승 서비스, 예약 작업, 자동 실행 항목
-      Settings    edge://flags 와 프로필 설정(Local State, Preferences, Secure Preferences)
-
-.PARAMETER BackupRoot
-    백업을 저장하고 찾는 폴더. 생략하면 사용자의 '문서' 폴더 아래 Edge-Debloat-Backups.
-    Backup 뿐 아니라 List, Restore, 그리고 Apply / Restore / Revert 의 자동 백업에도 적용됩니다.
-
-.PARAMETER BackupPath
-    Restore 에 쓸 백업. 폴더 경로 또는 백업 폴더 아래의 폴더 이름. 생략하면 가장 최근 백업.
-
-.PARAMETER Label
-    Backup 폴더 이름 뒤에 붙일 설명.
-
-.PARAMETER Interval
-    Schedule 의 자동 백업 주기. Hourly, Daily, Weekly 중 하나. 기본 Daily.
-
-.PARAMETER At
-    Schedule 의 실행 시각(HH:mm). 기본 12:00. 그 시각에 PC 가 꺼져 있었다면 켜진 뒤에 실행됩니다.
-
-.PARAMETER DayOfWeek
-    Interval 이 Weekly 일 때의 요일. 기본 Sunday.
-
-.PARAMETER Keep
-    보존할 백업 개수. 기본 14, 0 이면 지우지 않습니다. 같은 라벨의 백업끼리만 세어 오래된 것부터
-    지우므로, 자동 백업(라벨 auto)의 정리가 직접 만든 백업이나 pre-apply 백업을 지우지 않습니다.
-    Schedule 에서는 항상 적용되고, Backup 에서는 -Keep 을 직접 적었을 때만 적용됩니다.
+      Background  업데이트 서비스, 예약 작업, 자동 실행 항목
+                  (권한 상승 서비스는 저장 암호 복호화에 필요해 끄지 않습니다)
+      Settings    edge://flags (Local State)
 
 .PARAMETER CloseEdge
     Edge 가 실행 중이면 종료합니다(창을 닫아 보고, 남은 프로세스는 강제 종료).
 
-.PARAMETER NoBackup
-    Apply / Restore / Revert 직전의 자동 백업을 건너뜁니다.
-
 .PARAMETER Force
-    질문을 건너뜁니다. Apply 는 모든 정책 분류를 적용하고, Restore / Revert 는 확인 없이 진행합니다.
+    질문을 건너뜁니다. Apply 는 모든 정책 분류를 적용하고, Revert 는 확인 없이 진행합니다.
+
+.PARAMETER AllowUpdate
+    Apply 에서 Edge 업데이트를 막지 않고 허용합니다. Policies 범위에서는 Edge Update 정책을 지우고,
+    Background 범위에서는 업데이트 서비스(edgeupdate, edgeupdatem)를 기본 시작 유형으로 되돌리고
+    MicrosoftEdgeUpdate 예약 작업을 켭니다. 그 밖의 디블로트 항목은 그대로 적용합니다.
+    Status 에 붙이면 업데이트 항목을 "허용" 기준으로 점검합니다.
+    다시 막으려면 -AllowUpdate 없이 Apply 를 실행합니다.
+
+.PARAMETER SearchEngines
+    Search 에서 등록할 검색 엔진. 미리 정의된 이름(Google, DuckDuckGo, Brave, Startpage, Bing,
+    Ecosia, Naver, Daum) 또는 '이름=URL' 형식의 직접 지정. URL 의 검색어 자리는 {searchTerms} 나 %s.
+
+.PARAMETER DefaultSearch
+    Search 에서 기본 검색 엔진으로 쓸 엔진. 생략하면 -SearchEngines 의 첫 번째.
+    목록에 없는 엔진을 적으면 목록 맨 앞에 추가합니다.
+
+.PARAMETER SearchPolicy
+    Recommended(기본): 사용자가 Edge 설정에서 기본 엔진을 바꾸거나 엔진을 더 추가할 수 있습니다.
+    Mandatory: 목록이 고정되고, 사용자는 목록 안에서만 기본 엔진을 고를 수 있습니다.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Status
@@ -61,57 +51,38 @@
     powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Apply -CloseEdge
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Backup -Label before-reinstall
+    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Apply -AllowUpdate -Parts Policies,Background
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Backup -BackupRoot D:\Backups\Edge
+    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Search
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Schedule
+    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Search -SearchEngines DuckDuckGo,Google,'Wiki=https://ko.wikipedia.org/w/index.php?search=%s'
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Schedule -Interval Weekly -DayOfWeek Monday -At 09:00 -Keep 8
-
-.EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Restore -BackupPath 20261114-120000-before-reinstall -CloseEdge
+    powershell -ExecutionPolicy Bypass -File .\Edge-Debloat.ps1 Revert -CloseEdge
 #>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('Status', 'Apply', 'Backup', 'Restore', 'Revert', 'List', 'Schedule', 'Unschedule')]
+    [ValidateSet('Status', 'Apply', 'Revert', 'Search', 'SearchReset')]
     [string]$Action = 'Apply',
-
-    [string]$BackupRoot,
-    [string]$BackupPath,
-    [string]$Label,
-
-    [ValidateSet('Hourly', 'Daily', 'Weekly')]
-    [string]$Interval = 'Daily',
-
-    [ValidatePattern('^([01]?\d|2[0-3]):[0-5]\d$')]
-    [string]$At = '12:00',
-
-    [System.DayOfWeek]$DayOfWeek = 'Sunday',
-
-    [ValidateRange(0, 1000)]
-    [int]$Keep = 14,
 
     [ValidateSet('Policies', 'Background', 'Settings')]
     [string[]]$Parts = @('Policies', 'Background', 'Settings'),
 
     [switch]$CloseEdge,
-    [switch]$NoBackup,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$AllowUpdate,
+
+    [string[]]$SearchEngines,
+    [string]$DefaultSearch,
+
+    [ValidateSet('Recommended', 'Mandatory')]
+    [string]$SearchPolicy = 'Recommended'
 )
 
 $ErrorActionPreference = 'Stop'
-
-# Backup 은 -Keep 을 직접 적었을 때만 오래된 백업을 정리합니다.
-$KeepSpecified = $PSBoundParameters.ContainsKey('Keep')
-
-# 자동 백업 예약 작업의 이름과, 자동 백업에 붙는 라벨.
-$BackupTaskName = 'Edge-Debloat Backup'
-$AutoLabel      = 'auto'
 
 # =============================================================================
 #  정의
@@ -275,6 +246,14 @@ $ServiceDefaults = [ordered]@{
     'MicrosoftEdgeElevationService' = 'demand'
 }
 
+# 끄지 않고 기본 시작 유형(수동)을 유지할 서비스.
+# MicrosoftEdgeElevationService 는 Edge 저장 암호의 앱 바인딩 암호화(v20) 키를 풉니다.
+# 이 서비스를 끄면 v20 으로 저장된 암호를 복호화하지 못해, 아이디만 추천되고 비밀번호는 채워지지 않습니다.
+$KeepServices = @('MicrosoftEdgeElevationService')
+
+# Edge 업데이트를 맡는 서비스. -AllowUpdate 이면 끄지 않고 기본 시작 유형으로 둡니다.
+$UpdateServices = @('edgeupdate', 'edgeupdatem')
+
 # edge://flags. "이름@번호" 에서 번호는 드롭다운 순서입니다(일반 flag 는 1 = Enabled, 2 = Disabled).
 # edge-ai-search 는 선택지가 여러 개인 flag 로, Edge 157 에서 고른 값을 그대로 옮긴 것입니다.
 $Flags = @(
@@ -289,35 +268,36 @@ $Flags = @(
     'edge-llm-writer-api-for-default@2'
 )
 
+# Search 에서 고를 수 있는 검색 엔진. 값은 ManagedSearchEngines 의 항목 그대로입니다.
+# suggest_url 은 검색어 제안용이며, SearchSuggestEnabled = 0 이 적용돼 있으면 쓰이지 않습니다.
+$SearchPresets = [ordered]@{
+    Google     = [ordered]@{ name = 'Google';     keyword = 'google.com';     search_url = 'https://www.google.com/search?q={searchTerms}'; suggest_url = 'https://www.google.com/complete/search?client=chrome&q={searchTerms}' }
+    DuckDuckGo = [ordered]@{ name = 'DuckDuckGo'; keyword = 'duckduckgo.com'; search_url = 'https://duckduckgo.com/?q={searchTerms}';        suggest_url = 'https://duckduckgo.com/ac/?q={searchTerms}&type=list' }
+    Brave      = [ordered]@{ name = 'Brave';      keyword = 'search.brave.com'; search_url = 'https://search.brave.com/search?q={searchTerms}'; suggest_url = 'https://search.brave.com/api/suggest?q={searchTerms}' }
+    Startpage  = [ordered]@{ name = 'Startpage';  keyword = 'startpage.com';  search_url = 'https://www.startpage.com/sp/search?query={searchTerms}' }
+    Bing       = [ordered]@{ name = 'Bing';       keyword = 'bing.com';       search_url = 'https://www.bing.com/search?q={searchTerms}';   suggest_url = 'https://www.bing.com/osjson.aspx?query={searchTerms}' }
+    Ecosia     = [ordered]@{ name = 'Ecosia';     keyword = 'ecosia.org';     search_url = 'https://www.ecosia.org/search?q={searchTerms}'; suggest_url = 'https://ac.ecosia.org/autocomplete?q={searchTerms}&type=list' }
+    Naver      = [ordered]@{ name = 'Naver';      keyword = 'naver.com';      search_url = 'https://search.naver.com/search.naver?query={searchTerms}' }
+    Daum       = [ordered]@{ name = 'Daum';       keyword = 'daum.net';       search_url = 'https://search.daum.net/search?q={searchTerms}' }
+}
+
 $EdgePolicyKey   = 'HKLM\SOFTWARE\Policies\Microsoft\Edge'
 $UpdatePolicyKey = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate'
+
+# ManagedSearchEngines 를 기록하는 위치. Recommended 는 사용자가 Edge 설정에서 바꿀 수 있습니다.
+# DefaultSearchProvider* 정책은 도메인/MDM 에 가입한 PC 에서만 적용되므로 쓰지 않습니다.
+$SearchPolicyKeys = [ordered]@{
+    Recommended = "$EdgePolicyKey\Recommended"
+    Mandatory   = $EdgePolicyKey
+}
+$SearchPolicyLabels = @{
+    Recommended = '권장, 사용자가 바꿀 수 있음'
+    Mandatory   = '필수, 목록 고정'
+}
 $TelemetryKey    = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection'
 $RunKey          = 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run'
 
-# 백업/복원 때 통째로 내보내는 레지스트리 키.
-$RegistryKeys = @(
-    @{ Id = 'policy-edge-hklm';       Part = 'Policies'; Key = 'HKLM\SOFTWARE\Policies\Microsoft\Edge' }
-    @{ Id = 'policy-edgeupdate-hklm'; Part = 'Policies'; Key = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate' }
-    @{ Id = 'policy-edge-hkcu';       Part = 'Policies'; Key = 'HKCU\SOFTWARE\Policies\Microsoft\Edge' }
-    @{ Id = 'policy-edgeupdate-hkcu'; Part = 'Policies'; Key = 'HKCU\SOFTWARE\Policies\Microsoft\EdgeUpdate' }
-    # Secure Preferences 의 무결성 값(PreferenceMACs)이 여기에 있어 프로필 설정과 한 묶음입니다.
-    @{ Id = 'edge-user-hkcu';         Part = 'Settings'; Key = 'HKCU\SOFTWARE\Microsoft\Edge' }
-)
-
-# 프로필 폴더마다 백업하는 설정 파일.
-$ProfileFiles = @('Preferences', 'Secure Preferences')
-
-# 백업 폴더: -BackupRoot 로 지정하고, 생략하면 '문서' 아래 Edge-Debloat-Backups 입니다.
-# '문서' 가 OneDrive 등으로 옮겨져 있으면 옮겨진 위치를 따릅니다.
-if ($BackupRoot) {
-    $BackupRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BackupRoot)
-}
-else {
-    $documents = [Environment]::GetFolderPath('MyDocuments')
-    if (-not $documents) { $documents = Join-Path $env:USERPROFILE 'Documents' }
-    $BackupRoot = Join-Path $documents 'Edge-Debloat-Backups'
-}
-$UserData   =Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'
+$UserData   = Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'
 $Utf8NoBom  = New-Object System.Text.UTF8Encoding($false)
 
 # =============================================================================
@@ -384,11 +364,6 @@ function Invoke-Native {
 function ConvertTo-PsRegPath {
     param([string]$Key)
     'Registry::' + ($Key -replace '^HKLM\\', 'HKEY_LOCAL_MACHINE\' -replace '^HKCU\\', 'HKEY_CURRENT_USER\')
-}
-
-function Test-RegKey {
-    param([string]$Key)
-    Test-Path -LiteralPath (ConvertTo-PsRegPath $Key)
 }
 
 function Get-RegValue {
@@ -569,210 +544,220 @@ function Update-EdgeFlags {
 }
 
 # =============================================================================
-#  Backup
+#  Search / SearchReset
 # =============================================================================
 
-function New-EdgeBackup {
-    param([string]$BackupLabel)
+# 번호, 미리 정의된 이름, '이름=URL' 중 하나를 ManagedSearchEngines 항목으로 바꿉니다.
+function ConvertTo-SearchEngine {
+    param([string]$Token)
+    $token = $Token.Trim()
+    if (-not $token) { throw '빈 값입니다' }
 
-    $name = Get-Date -Format 'yyyyMMdd-HHmmss'
-    if ($BackupLabel) { $name += '-' + ($BackupLabel -replace '[^\w\-\.]', '_') }
-    $dir = Join-Path $BackupRoot $name
-    New-Item -ItemType Directory -Path (Join-Path $dir 'registry') -Force | Out-Null
-
-    Write-Section "백업: $name"
-
-    if (-not (Test-Admin)) {
-        Write-Step 'WARN' '관리자 권한이 아니라 예약 작업 목록이 빠질 수 있습니다'
+    $names = @($SearchPresets.Keys)
+    $preset = $null
+    if ($token -match '^\d+$') {
+        $index = [int]$token - 1
+        if ($index -lt 0 -or $index -ge $names.Count) { throw "번호는 1-$($names.Count) 사이여야 합니다: $token" }
+        $preset = $SearchPresets[$names[$index]]
     }
-    $edgeRunning = Test-EdgeRunning
-    if ($edgeRunning) {
-        Write-Step 'WARN' 'Edge 실행 중: 방금 바꾼 설정은 아직 파일에 기록되지 않았을 수 있습니다'
+    elseif ($token -notmatch '=') {
+        $match = @($names | Where-Object { $_ -eq $token })
+        if ($match.Count -eq 0) { throw "모르는 검색 엔진입니다: $token (사용 가능: $($names -join ', '), 또는 이름=URL)" }
+        $preset = $SearchPresets[$match[0]]
     }
-
-    # 레지스트리 키
-    $registry = @()
-    foreach ($entry in $RegistryKeys) {
-        $existed = Test-RegKey $entry.Key
-        if ($existed) {
-            $file   = Join-Path $dir "registry\$($entry.Id).reg"
-            $result = Invoke-Native 'reg.exe' @('export', $entry.Key, $file, '/y')
-            if ($result.ExitCode -ne 0) { throw "reg export 실패 ($($entry.Key)): $($result.Output)" }
-            Write-Step 'OK' "레지스트리 $($entry.Key)"
-        }
-        else {
-            Write-Step 'SKIP' "레지스트리 $($entry.Key) (없음)"
-        }
-        $registry += [ordered]@{ Id = $entry.Id; Part = $entry.Part; Key = $entry.Key; Existed = $existed }
+    if ($preset) {
+        $copy = [ordered]@{}
+        foreach ($key in $preset.Keys) { $copy[$key] = $preset[$key] }
+        return $copy
     }
 
-    # 사람이 읽기 위한 정책 목록
-    $policySnapshot = [ordered]@{}
-    $policyItem = Get-Item -LiteralPath (ConvertTo-PsRegPath $EdgePolicyKey) -ErrorAction SilentlyContinue
-    if ($policyItem) {
-        foreach ($valueName in ($policyItem.GetValueNames() | Sort-Object)) {
-            $policySnapshot[$valueName] = $policyItem.GetValue($valueName)
-        }
+    $name, $url = $token -split '=', 2
+    $name = $name.Trim()
+    $url  = $url.Trim() -replace '%s', '{searchTerms}'
+    if (-not $name) { throw "이름이 비어 있습니다: $token" }
+    $uri = $null
+    if (-not [uri]::TryCreate($url, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -notin @('http', 'https')) {
+        throw "http(s) 주소가 아닙니다: $url"
     }
-    [IO.File]::WriteAllText((Join-Path $dir 'policies.json'), ($policySnapshot | ConvertTo-Json), $Utf8NoBom)
-
-    # 서비스 / 예약 작업 / 자동 실행
-    $services = @(Get-EdgeServices | ForEach-Object { [ordered]@{ Name = $_.Name; Start = $_.Start } })
-    Write-Step 'OK' "서비스 $($services.Count)개"
-    $tasks = @(Get-EdgeTasks | ForEach-Object {
-            [ordered]@{ TaskPath = $_.TaskPath; TaskName = $_.TaskName; Enabled = ("$($_.State)" -ne 'Disabled') }
-        })
-    Write-Step 'OK' "예약 작업 $($tasks.Count)개"
-    $runEntries = @(Get-EdgeRunEntries | ForEach-Object { [ordered]@{ Name = $_.Name; Value = $_.Value } })
-
-    # 프로필 설정 파일
-    $files = @()
-    if (Test-Path -LiteralPath $UserData) {
-        $relPaths = @('Local State')
-        foreach ($profileDir in (Get-ProfileDirs)) {
-            foreach ($fileName in $ProfileFiles) { $relPaths += (Join-Path $profileDir $fileName) }
-        }
-        foreach ($rel in $relPaths) {
-            $source = Join-Path $UserData $rel
-            if (-not (Test-Path -LiteralPath $source)) { continue }
-            $target = Join-Path $dir (Join-Path 'userdata' $rel)
-            New-Item -ItemType Directory -Path (Split-Path $target -Parent) -Force | Out-Null
-            Copy-Item -LiteralPath $source -Destination $target -Force
-            $files += $rel
-        }
-        Write-Step 'OK' "설정 파일 $($files.Count)개 (flags 포함)"
-    }
-    else {
-        Write-Step 'SKIP' 'Edge 사용자 데이터 폴더 없음'
-    }
-
-    $flags = @(Get-EdgeFlags)
-    [IO.File]::WriteAllLines((Join-Path $dir 'flags.txt'), [string[]]$flags, $Utf8NoBom)
-
-    $manifest = [ordered]@{
-        Created        = (Get-Date).ToString('s')
-        Label          = $BackupLabel
-        EdgeVersion    = Get-EdgeVersion
-        User           = "$env:USERDOMAIN\$env:USERNAME"
-        UserData       = $UserData
-        EdgeWasRunning = $edgeRunning
-        Registry       = $registry
-        AllowTelemetry = Get-RegValue $TelemetryKey 'AllowTelemetry'
-        Services       = $services
-        Tasks          = $tasks
-        RunEntries     = $runEntries
-        Files          = $files
-        Flags          = $flags
-    }
-    [IO.File]::WriteAllText((Join-Path $dir 'manifest.json'), ($manifest | ConvertTo-Json -Depth 6), $Utf8NoBom)
-
-    Write-Step 'OK' "저장 위치: $dir"
-    $dir
+    if ($url -notmatch '\{searchTerms\}') { throw "URL 에 검색어 자리({searchTerms} 또는 %s)가 없습니다: $url" }
+    [ordered]@{ name = $name; keyword = ($uri.Host -replace '^www\.', ''); search_url = $url }
 }
 
-function Get-EdgeBackups {
-    if (-not (Test-Path -LiteralPath $BackupRoot)) { return @() }
-    @(Get-ChildItem -LiteralPath $BackupRoot -Directory |
-            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'manifest.json') } |
-            Sort-Object Name)
-}
+# 입력 목록을 검색 엔진 목록으로 바꾸고, 기본 엔진에 is_default 를 붙입니다.
+function Resolve-SearchEngines {
+    param([string[]]$Tokens, [string]$DefaultToken)
 
-function Read-Manifest {
-    param([string]$Dir)
-    [IO.File]::ReadAllText((Join-Path $Dir 'manifest.json'), $Utf8NoBom) | ConvertFrom-Json
-}
-
-# 같은 라벨의 백업 중 최근 $Count 개만 남기고 오래된 것부터 지웁니다.
-# 이 스크립트가 만든 폴더(날짜-시각 이름 + manifest.json)만 대상입니다.
-function Remove-OldBackups {
-    param([string]$BackupLabel, [int]$Count)
-    if ($Count -le 0) { return }
-
-    $same = @(Get-EdgeBackups | Where-Object {
-            if ($_.Name -notmatch '^\d{8}-\d{6}') { return $false }
-            try { [string](Read-Manifest $_.FullName).Label -eq [string]$BackupLabel } catch { $false }
-        })
-    $excess = $same.Count - $Count
-    if ($excess -le 0) { return }
-
-    foreach ($old in $same[0..($excess - 1)]) {
-        try {
-            Remove-Item -LiteralPath $old.FullName -Recurse -Force
-            Write-Step 'OK' "오래된 백업 삭제: $($old.Name)"
+    $engines = New-Object System.Collections.ArrayList
+    foreach ($token in $Tokens) {
+        $engine = ConvertTo-SearchEngine $token
+        if (@($engines | Where-Object { $_.keyword -eq $engine.keyword }).Count -gt 0) {
+            Write-Step 'WARN' "$($engine.name): 키워드 $($engine.keyword) 가 겹쳐 건너뜁니다"
+            continue
         }
-        catch { Write-Step 'FAIL' "$($old.Name) 삭제 실패: $($_.Exception.Message)" }
+        [void]$engines.Add($engine)
+    }
+
+    $defaultKeyword = $null
+    if ($DefaultToken) {
+        $default = ConvertTo-SearchEngine $DefaultToken
+        $defaultKeyword = $default.keyword
+        if (@($engines | Where-Object { $_.keyword -eq $defaultKeyword }).Count -eq 0) { $engines.Insert(0, $default) }
+    }
+    if ($engines.Count -eq 0) { throw '검색 엔진을 하나 이상 지정하세요' }
+    if (-not $defaultKeyword) { $defaultKeyword = $engines[0].keyword }
+
+    foreach ($engine in $engines) {
+        if ($engine.keyword -eq $defaultKeyword) { $engine['is_default'] = $true }
+    }
+    # 하나씩 내보내므로 받는 쪽에서 @( ) 로 감쌉니다.
+    $engines
+}
+
+# 지금 기록된 ManagedSearchEngines 를 위치별로 읽습니다.
+function Get-SearchEnginePolicies {
+    foreach ($mode in $SearchPolicyKeys.Keys) {
+        $raw = Get-RegValue $SearchPolicyKeys[$mode] 'ManagedSearchEngines'
+        if ($null -eq $raw) { continue }
+        $engines = $null
+        try { $engines = @(([string]$raw | ConvertFrom-Json) | ForEach-Object { $_ } | Where-Object { $_.search_url }) } catch { }
+        [pscustomobject]@{ Mode = $mode; Raw = [string]$raw; Engines = $engines }
     }
 }
 
-# =============================================================================
-#  Schedule / Unschedule
-# =============================================================================
-
-function Get-ScheduleSummary {
-    $when = switch ($Interval) {
-        'Hourly' { "매시간 (기준 $At)" }
-        'Daily'  { "매일 $At" }
-        'Weekly' { "매주 $DayOfWeek $At" }
-    }
-    "$when, 보존 $(if ($Keep -gt 0) { "${Keep}개" } else { '무제한' })"
-}
-
-function Invoke-Schedule {
-    $time    = [datetime]::Today.Add([timespan]::Parse($At))
-    $trigger = switch ($Interval) {
-        'Hourly' { New-ScheduledTaskTrigger -Once -At $time -RepetitionInterval (New-TimeSpan -Hours 1) }
-        'Daily'  { New-ScheduledTaskTrigger -Daily -At $time }
-        'Weekly' { New-ScheduledTaskTrigger -Weekly -DaysOfWeek $DayOfWeek -At $time }
-    }
-
-    # 경로 끝의 \ 는 닫는 따옴표를 이스케이프하므로 떼어 냅니다.
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" Backup -Label {1} -Keep {2} -BackupRoot "{3}"' -f `
-        $PSCommandPath, $AutoLabel, $Keep, $BackupRoot.TrimEnd('\')
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
-
-    # 프로필 설정과 HKCU 를 읽어야 하므로 지금 사용자로, 로그온해 있을 때만 실행합니다.
-    $isAdmin   = Test-Admin
-    $runLevel  = if ($isAdmin) { 'Highest' } else { 'Limited' }
-    $user      = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel $runLevel
-    $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-        -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
-
-    Write-Section '자동 백업 일정'
-    Register-ScheduledTask -TaskName $BackupTaskName -Action $action -Trigger $trigger -Principal $principal `
-        -Settings $settings -Description "Edge-Debloat 자동 백업: $(Get-ScheduleSummary)" -Force | Out-Null
-
-    Write-Step 'OK' "등록: $(Get-ScheduleSummary)"
-    Write-Step 'INFO' "실행 계정: $user"
-    Write-Step 'INFO' "저장 위치: $BackupRoot"
-    Write-Step 'INFO' "스크립트: $PSCommandPath (옮기면 Schedule 을 다시 실행해야 함)"
-    if (-not $isAdmin) {
-        Write-Step 'WARN' '관리자 권한 없이 등록해, 자동 백업에서 예약 작업 목록이 빠질 수 있습니다'
+function Show-SearchEngines {
+    param($Engines)
+    foreach ($engine in $Engines) {
+        $mark = if ($engine.is_default) { '* ' } else { '  ' }
+        Write-Host ("         {0}{1,-12} {2}" -f $mark, $engine.name, $engine.search_url)
     }
 }
 
-function Invoke-Unschedule {
-    Write-Section '자동 백업 일정'
-    if (-not (Get-ScheduledTask -TaskName $BackupTaskName -ErrorAction SilentlyContinue)) {
-        Write-Step 'SKIP' '등록된 일정 없음'
+# DefaultSearchProvider* 정책 값을 위치별로 찾습니다. 이 정책은 도메인/MDM 에 가입하지 않은 PC 에서는
+# 적용되지 않고, DefaultSearchProviderSearchURL 이 있으면 Edge 가 ManagedSearchEngines 도 무시합니다.
+function Get-DefaultSearchProviderValues {
+    foreach ($key in $SearchPolicyKeys.Values) {
+        $item = Get-Item -LiteralPath (ConvertTo-PsRegPath $key) -ErrorAction SilentlyContinue
+        if (-not $item) { continue }
+        foreach ($name in @($item.GetValueNames() | Where-Object { $_ -like 'DefaultSearchProvider*' })) {
+            [pscustomobject]@{ Key = $key; Name = $name; Value = $item.GetValue($name) }
+        }
+    }
+}
+
+function Test-SearchPolicyConflict {
+    foreach ($key in $SearchPolicyKeys.Values) {
+        if ($null -ne (Get-RegValue $key 'DefaultSearchProviderSearchURL')) {
+            Write-Step 'WARN' "$key 에 DefaultSearchProviderSearchURL 이 있어 ManagedSearchEngines 가 무시됩니다(Search 가 지움)"
+        }
+    }
+}
+
+function Read-SearchSelection {
+    Write-Section '검색 엔진 선택'
+    $i = 1
+    foreach ($name in $SearchPresets.Keys) {
+        Write-Host ("  {0}. {1,-11} {2}" -f $i, $name, $SearchPresets[$name].search_url)
+        $i++
+    }
+    Write-Host '  직접 추가하려면 이름=URL 형식으로 적습니다(검색어 자리는 {searchTerms} 또는 %s).'
+    Write-Host ''
+
+    while ($true) {
+        $default = (Read-Host '기본 검색 엔진 (번호, 이름 또는 이름=URL)').Trim()
+        if (-not $default) { continue }
+        try { [void](ConvertTo-SearchEngine $default); break }
+        catch { Write-Step 'FAIL' $_.Exception.Message }
+    }
+    while ($true) {
+        $more = (Read-Host '함께 등록할 엔진 (쉼표로 구분, Enter = 없음)').Trim()
+        $tokens = @($default) + @($more -split ',' | Where-Object { $_.Trim() })
+        try { return @(Resolve-SearchEngines $tokens $default) }
+        catch { Write-Step 'FAIL' $_.Exception.Message }
+    }
+}
+
+function Invoke-Search {
+    Assert-Admin
+
+    if ($SearchEngines -or $DefaultSearch) {
+        try { $engines = @(Resolve-SearchEngines @($SearchEngines) $DefaultSearch) }
+        catch { Write-Step 'FAIL' $_.Exception.Message; exit 1 }
+    }
+    elseif ($Force) {
+        Write-Step 'FAIL' '-Force 와 함께 쓸 때는 -SearchEngines 로 검색 엔진을 지정하세요'
+        exit 1
+    }
+    else { $engines = @(Read-SearchSelection) }
+
+    Write-Section "검색 엔진 ($($SearchPolicyLabels[$SearchPolicy]))"
+    Show-SearchEngines $engines
+    Write-Host '         (* = 기본 검색 엔진)'
+    $oldProvider = @(Get-DefaultSearchProviderValues)
+    if ($oldProvider.Count -gt 0) {
+        Write-Step 'WARN' '아래 DefaultSearchProvider* 정책을 함께 지웁니다(가입하지 않은 PC 에서는 적용되지 않고, 남아 있으면 이 목록이 무시됨)'
+        foreach ($value in $oldProvider) { Write-Host "         $($value.Key)\$($value.Name) = $($value.Value)" -ForegroundColor Yellow }
+    }
+    if (-not (Confirm-Action '이 목록을 정책으로 기록할까요?')) {
+        Write-Step 'SKIP' '취소됨'
         return
     }
-    Unregister-ScheduledTask -TaskName $BackupTaskName -Confirm:$false
-    Write-Step 'OK' '일정 삭제(이미 만든 백업은 그대로 둠)'
+
+    [void](Close-Edge)
+
+    Write-Section '검색 엔진 정책'
+    foreach ($value in $oldProvider) {
+        [void](Remove-RegValue $value.Key $value.Name)
+        Write-Step 'OK' "$($value.Name) 삭제"
+    }
+    $json   = ConvertTo-Json -InputObject @($engines) -Compress -Depth 3
+    $target = $SearchPolicyKeys[$SearchPolicy]
+    foreach ($mode in $SearchPolicyKeys.Keys) {
+        if ($mode -ne $SearchPolicy -and (Remove-RegValue $SearchPolicyKeys[$mode] 'ManagedSearchEngines')) {
+            Write-Step 'OK' "$($SearchPolicyKeys[$mode]) 의 ManagedSearchEngines 삭제"
+        }
+    }
+    Set-RegValue $target 'ManagedSearchEngines' $json
+
+    $written = @(Get-SearchEnginePolicies | Where-Object { $_.Mode -eq $SearchPolicy })
+    if ($written.Count -ne 1 -or @($written[0].Engines).Count -ne $engines.Count) {
+        Write-Step 'FAIL' "기록한 값을 다시 읽지 못했습니다: $target"
+        exit 1
+    }
+    $defaultName = ($engines | Where-Object { $_.is_default } | Select-Object -First 1).name
+    Write-Step 'OK' "$target\ManagedSearchEngines: 엔진 $($engines.Count)개, 기본 $defaultName"
+    Test-SearchPolicyConflict
+
+    if (Test-EdgeRunning) { Write-Step 'WARN' 'Edge 가 실행 중입니다. 이 정책은 Edge 를 다시 시작해야 반영됩니다' }
+    Write-Host ''
+    Write-Host '완료. Edge 를 다시 시작한 뒤 edge://settings/search 와 edge://policy 를 확인하세요.' -ForegroundColor Green
 }
 
-function Resolve-Backup {
-    if ($BackupPath) {
-        foreach ($candidate in @($BackupPath, (Join-Path $BackupRoot $BackupPath))) {
-            if (Test-Path -LiteralPath (Join-Path $candidate 'manifest.json')) {
-                return (Resolve-Path -LiteralPath $candidate).Path
-            }
-        }
-        throw "백업을 찾을 수 없습니다: $BackupPath"
+function Invoke-SearchReset {
+    Assert-Admin
+
+    Write-Section '검색 엔진 정책 지우기'
+    $current = @(Get-SearchEnginePolicies)
+    if ($current.Count -eq 0) {
+        Write-Step 'SKIP' '검색 엔진 정책 없음'
+        return
     }
-    $all = Get-EdgeBackups
-    if ($all.Count -eq 0) { throw "백업이 없습니다: $BackupRoot" }
-    $all[-1].FullName
+    foreach ($policy in $current) {
+        Write-Step 'INFO' "$($SearchPolicyKeys[$policy.Mode]) ($($SearchPolicyLabels[$policy.Mode]))"
+        Show-SearchEngines $policy.Engines
+    }
+    if (-not (Confirm-Action '검색 엔진 정책을 지울까요?')) {
+        Write-Step 'SKIP' '취소됨'
+        return
+    }
+
+    [void](Close-Edge)
+
+    foreach ($policy in $current) {
+        [void](Remove-RegValue $SearchPolicyKeys[$policy.Mode] 'ManagedSearchEngines')
+        Write-Step 'OK' "$($SearchPolicyKeys[$policy.Mode]) 의 ManagedSearchEngines 삭제"
+    }
+    Write-Host ''
+    Write-Host '완료. Edge 를 다시 시작한 뒤 edge://settings/search 에서 기본 검색 엔진을 확인하세요.' -ForegroundColor Green
 }
 
 # =============================================================================
@@ -789,8 +774,6 @@ function Invoke-Apply {
     $edgeClosed = $true
     if ($Parts -contains 'Settings') { $edgeClosed = Close-Edge }
 
-    if (-not $NoBackup) { New-EdgeBackup -BackupLabel 'pre-apply' | Out-Null }
-
     if ($Parts -contains 'Policies') {
         Write-Section '정책'
         foreach ($group in $EdgePolicies.Keys) {
@@ -804,8 +787,15 @@ function Invoke-Apply {
             Write-Step 'OK' "$group $($EdgePolicies[$group].Count)개 기록"
         }
 
-        foreach ($name in $UpdatePolicies.Keys) { Set-RegValue $UpdatePolicyKey $name $UpdatePolicies[$name] }
-        Write-Step 'OK' "Edge Update 정책 $($UpdatePolicies.Count)개 기록"
+        if ($AllowUpdate) {
+            $removed = 0
+            foreach ($name in $UpdatePolicies.Keys) { if (Remove-RegValue $UpdatePolicyKey $name) { $removed++ } }
+            Write-Step 'OK' "Edge Update 정책 ${removed}개 삭제(업데이트 허용)"
+        }
+        else {
+            foreach ($name in $UpdatePolicies.Keys) { Set-RegValue $UpdatePolicyKey $name $UpdatePolicies[$name] }
+            Write-Step 'OK' "Edge Update 정책 $($UpdatePolicies.Count)개 기록"
+        }
 
         # Windows 10/11 의 Edge 는 자체 DiagnosticData 보다 Windows 진단 데이터 수준을 따릅니다.
         Set-RegValue $TelemetryKey 'AllowTelemetry' 0
@@ -817,6 +807,27 @@ function Invoke-Apply {
         $services = Get-EdgeServices
         if ($services.Count -eq 0) { Write-Step 'SKIP' 'Edge 서비스 없음' }
         foreach ($svc in $services) {
+            if ($KeepServices -contains $svc.Name) {
+                # 이전 버전이 꺼 둔 경우 기본값으로 되살립니다.
+                if ($svc.Start -eq 'disabled') {
+                    try {
+                        Set-ServiceStart $svc.Name $ServiceDefaults[$svc.Name]
+                        Write-Step 'OK' "$($svc.Name) -> $($ServiceDefaults[$svc.Name]) (저장 암호 복호화에 필요해 되살림)"
+                    }
+                    catch { Write-Step 'FAIL' "$($svc.Name): $($_.Exception.Message)" }
+                }
+                else { Write-Step 'SKIP' "$($svc.Name) (저장 암호 복호화에 필요해 유지)" }
+                continue
+            }
+            if ($AllowUpdate -and $UpdateServices -contains $svc.Name) {
+                $default = $ServiceDefaults[$svc.Name]
+                try {
+                    Set-ServiceStart $svc.Name $default
+                    Write-Step 'OK' "$($svc.Name) -> $default (업데이트 허용)"
+                }
+                catch { Write-Step 'FAIL' "$($svc.Name): $($_.Exception.Message)" }
+                continue
+            }
             try {
                 if ($svc.State -ne 'Stopped') { Stop-Service -Name $svc.Name -Force }
                 Set-ServiceStart $svc.Name 'disabled'
@@ -824,15 +835,26 @@ function Invoke-Apply {
             }
             catch { Write-Step 'FAIL' "$($svc.Name): $($_.Exception.Message)" }
         }
-        Get-Process -Name MicrosoftEdgeUpdate -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        if (-not $AllowUpdate) {
+            Get-Process -Name MicrosoftEdgeUpdate -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        }
 
         Write-Section '예약 작업'
         $tasks = Get-EdgeTasks
-        if ($tasks.Count -eq 0) { Write-Step 'SKIP' 'MicrosoftEdgeUpdate 작업 없음' }
+        if ($tasks.Count -eq 0) {
+            $note = if ($AllowUpdate) { ' (Edge 업데이트가 실행되면 다시 만들어집니다)' } else { '' }
+            Write-Step 'SKIP' "MicrosoftEdgeUpdate 작업 없음$note"
+        }
         foreach ($task in $tasks) {
             try {
-                $task | Disable-ScheduledTask | Out-Null
-                Write-Step 'OK' "$($task.TaskName) -> 사용 안 함"
+                if ($AllowUpdate) {
+                    $task | Enable-ScheduledTask | Out-Null
+                    Write-Step 'OK' "$($task.TaskName) -> 사용(업데이트 허용)"
+                }
+                else {
+                    $task | Disable-ScheduledTask | Out-Null
+                    Write-Step 'OK' "$($task.TaskName) -> 사용 안 함"
+                }
             }
             catch { Write-Step 'FAIL' "$($task.TaskName): $($_.Exception.Message)" }
         }
@@ -863,120 +885,13 @@ function Invoke-Apply {
 
     Write-Section '직접 해야 하는 설정'
     Write-Host '아래 항목은 개인 PC 에서 정책으로 강제할 수 없어 Edge 설정에서 직접 바꿔야 합니다.'
-    Write-Host '  - 검색 엔진        edge://settings/search'
     Write-Host '  - SmartScreen 끄기 edge://settings/privacy (방문 URL 이 MS 로 전송됨. 끄면 피싱 차단도 사라짐)'
+    if (@(Get-SearchEnginePolicies).Count -eq 0) {
+        Write-Host ''
+        Write-Host '기본 검색 엔진은 Search 로 바꿀 수 있습니다: .\Edge-Debloat.ps1 Search'
+    }
     Write-Host ''
     Write-Host '완료. Edge 를 다시 시작한 뒤 edge://policy 에서 오류가 없는지 확인하세요.' -ForegroundColor Green
-}
-
-# =============================================================================
-#  Restore
-# =============================================================================
-
-function Invoke-Restore {
-    Assert-Admin
-
-    $dir      = Resolve-Backup
-    $manifest = Read-Manifest $dir
-
-    Write-Section "복원: $(Split-Path $dir -Leaf)"
-    Write-Step 'INFO' "백업 시각 $($manifest.Created), Edge $($manifest.EdgeVersion), 사용자 $($manifest.User)"
-    Write-Step 'INFO' "범위: $($Parts -join ', ')"
-
-    $currentUser = "$env:USERDOMAIN\$env:USERNAME"
-    if ($manifest.User -ne $currentUser) {
-        Write-Step 'WARN' "백업한 사용자($($manifest.User))와 지금 사용자($currentUser)가 다릅니다. 프로필 설정은 지금 사용자에게 복원됩니다"
-    }
-    $currentVersion = Get-EdgeVersion
-    if ($currentVersion -and $manifest.EdgeVersion -and $currentVersion -ne $manifest.EdgeVersion) {
-        Write-Step 'WARN' "Edge 버전이 다릅니다(백업 $($manifest.EdgeVersion), 현재 $currentVersion)"
-    }
-
-    if (-not (Confirm-Action '현재 상태를 이 백업으로 덮어쓸까요?')) {
-        Write-Step 'SKIP' '취소됨'
-        return
-    }
-
-    if ($Parts -contains 'Settings') {
-        if (-not (Close-Edge)) {
-            Write-Step 'FAIL' 'Edge 가 실행 중입니다. Edge 를 닫거나 -CloseEdge 를 붙이세요. 아무것도 바꾸지 않았습니다'
-            exit 1
-        }
-    }
-
-    if (-not $NoBackup) { New-EdgeBackup -BackupLabel 'pre-restore' | Out-Null }
-
-    Write-Section '레지스트리'
-    foreach ($entry in @($manifest.Registry)) {
-        if ($Parts -notcontains $entry.Part) { continue }
-        if (Test-RegKey $entry.Key) {
-            $result = Invoke-Native 'reg.exe' @('delete', $entry.Key, '/f')
-            if ($result.ExitCode -ne 0) { Write-Step 'FAIL' "$($entry.Key) 삭제 실패: $($result.Output)"; continue }
-        }
-        if ($entry.Existed) {
-            $file   = Join-Path $dir "registry\$($entry.Id).reg"
-            $result = Invoke-Native 'reg.exe' @('import', $file)
-            if ($result.ExitCode -ne 0) { Write-Step 'FAIL' "$($entry.Key) 가져오기 실패: $($result.Output)"; continue }
-            Write-Step 'OK' "$($entry.Key) 복원"
-        }
-        else {
-            Write-Step 'OK' "$($entry.Key) 제거(백업 시점에 없었음)"
-        }
-    }
-
-    if ($Parts -contains 'Policies') {
-        if ($null -ne $manifest.AllowTelemetry) {
-            Set-RegValue $TelemetryKey 'AllowTelemetry' ([int]$manifest.AllowTelemetry)
-            Write-Step 'OK' "AllowTelemetry = $($manifest.AllowTelemetry)"
-        }
-        elseif (Remove-RegValue $TelemetryKey 'AllowTelemetry') {
-            Write-Step 'OK' 'AllowTelemetry 제거(백업 시점에 없었음)'
-        }
-    }
-
-    if ($Parts -contains 'Background') {
-        Write-Section '서비스 / 예약 작업 / 자동 실행'
-        foreach ($svc in @($manifest.Services)) {
-            if (-not (Get-Service -Name $svc.Name -ErrorAction SilentlyContinue)) {
-                Write-Step 'SKIP' "$($svc.Name) (설치돼 있지 않음)"
-                continue
-            }
-            try {
-                Set-ServiceStart $svc.Name $svc.Start
-                Write-Step 'OK' "$($svc.Name) -> $($svc.Start)"
-            }
-            catch { Write-Step 'FAIL' "$($svc.Name): $($_.Exception.Message)" }
-        }
-        foreach ($saved in @($manifest.Tasks)) {
-            $task = Get-ScheduledTask -TaskPath $saved.TaskPath -TaskName $saved.TaskName -ErrorAction SilentlyContinue
-            if (-not $task) { Write-Step 'SKIP' "$($saved.TaskName) (없음)"; continue }
-            try {
-                if ($saved.Enabled) { $task | Enable-ScheduledTask | Out-Null } else { $task | Disable-ScheduledTask | Out-Null }
-                Write-Step 'OK' "$($saved.TaskName) -> $(if ($saved.Enabled) { '사용' } else { '사용 안 함' })"
-            }
-            catch { Write-Step 'FAIL' "$($saved.TaskName): $($_.Exception.Message)" }
-        }
-        foreach ($entry in (Get-EdgeRunEntries)) { [void](Remove-RegValue $RunKey $entry.Name) }
-        foreach ($entry in @($manifest.RunEntries)) {
-            Set-RegValue $RunKey $entry.Name ([string]$entry.Value)
-            Write-Step 'OK' "자동 실행 항목 복원: $($entry.Name)"
-        }
-    }
-
-    if ($Parts -contains 'Settings') {
-        Write-Section '프로필 설정 (flags 포함)'
-        foreach ($rel in @($manifest.Files)) {
-            $source = Join-Path $dir (Join-Path 'userdata' $rel)
-            $target = Join-Path $UserData $rel
-            if (-not (Test-Path -LiteralPath $source)) { Write-Step 'FAIL' "$rel (백업에 파일 없음)"; continue }
-            New-Item -ItemType Directory -Path (Split-Path $target -Parent) -Force | Out-Null
-            Copy-Item -LiteralPath $source -Destination $target -Force
-            Write-Step 'OK' $rel
-        }
-    }
-
-    Write-Host ''
-    Write-Host '복원 완료. Edge 를 시작해 edge://policy 와 edge://flags 를 확인하세요.' -ForegroundColor Green
 }
 
 # =============================================================================
@@ -996,8 +911,6 @@ function Invoke-Revert {
     $edgeClosed = $true
     if ($Parts -contains 'Settings') { $edgeClosed = Close-Edge }
 
-    if (-not $NoBackup) { New-EdgeBackup -BackupLabel 'pre-revert' | Out-Null }
-
     if ($Parts -contains 'Policies') {
         Write-Section '정책'
         $removed = 0
@@ -1006,6 +919,9 @@ function Invoke-Revert {
         $removed = 0
         foreach ($name in $UpdatePolicies.Keys) { if (Remove-RegValue $UpdatePolicyKey $name) { $removed++ } }
         Write-Step 'OK' "Edge Update 정책 ${removed}개 삭제"
+        $removed = 0
+        foreach ($key in $SearchPolicyKeys.Values) { if (Remove-RegValue $key 'ManagedSearchEngines') { $removed++ } }
+        if ($removed -gt 0) { Write-Step 'OK' '검색 엔진 정책(ManagedSearchEngines) 삭제' }
         Write-Step 'INFO' 'Windows 진단 데이터 수준(AllowTelemetry)은 Windows 전체 설정이라 그대로 둡니다'
     }
 
@@ -1049,7 +965,7 @@ function Invoke-Revert {
 }
 
 # =============================================================================
-#  Status / List
+#  Status
 # =============================================================================
 
 function Show-PolicyGroup {
@@ -1080,25 +996,63 @@ function Invoke-Status {
 
     Write-Section '정책'
     foreach ($group in $EdgePolicies.Keys) { Show-PolicyGroup $group $EdgePolicyKey $EdgePolicies[$group] }
-    Show-PolicyGroup 'Edge Update' $UpdatePolicyKey $UpdatePolicies
+    if ($AllowUpdate) {
+        $present = @($UpdatePolicies.Keys | Where-Object { $null -ne (Get-RegValue $UpdatePolicyKey $_) })
+        if ($present.Count -eq 0) { Write-Step 'OK' 'Edge Update 정책 없음(업데이트 허용)' }
+        else { Write-Step 'WARN' "Edge Update 정책이 업데이트를 막고 있음: $($present -join ', ')" }
+    }
+    else { Show-PolicyGroup 'Edge Update' $UpdatePolicyKey $UpdatePolicies }
     $telemetry = Get-RegValue $TelemetryKey 'AllowTelemetry'
     if ($telemetry -eq 0) { Write-Step 'OK' 'Windows 진단 데이터 수준 AllowTelemetry = 0' }
     else { Write-Step 'WARN' "Windows 진단 데이터 수준 AllowTelemetry = $(if ($null -eq $telemetry) { '없음' } else { $telemetry })" }
+
+    Write-Section '검색 엔진'
+    $searchPolicies = @(Get-SearchEnginePolicies)
+    if ($searchPolicies.Count -eq 0) { Write-Step 'INFO' '검색 엔진 정책 없음(Edge 설정의 값을 씀, Search 로 지정)' }
+    foreach ($policy in $searchPolicies) {
+        if ($null -eq $policy.Engines) {
+            Write-Step 'WARN' "$($SearchPolicyKeys[$policy.Mode])\ManagedSearchEngines 를 읽을 수 없음(JSON 오류)"
+            continue
+        }
+        $default = @($policy.Engines | Where-Object { $_.is_default })
+        $state   = if ($default.Count -eq 1) { 'OK' } else { 'WARN' }
+        $name    = if ($default.Count -eq 1) { $default[0].name } else { "기본 엔진이 $($default.Count)개" }
+        Write-Step $state "ManagedSearchEngines ($($SearchPolicyLabels[$policy.Mode])): 기본 $name, 엔진 $(@($policy.Engines).Count)개"
+        Show-SearchEngines $policy.Engines
+    }
+    if ($searchPolicies.Count -gt 1) { Write-Step 'WARN' '필수와 권장이 모두 있어 필수 정책이 적용됩니다' }
+    Test-SearchPolicyConflict
 
     Write-Section '서비스'
     $services = Get-EdgeServices
     if ($services.Count -eq 0) { Write-Step 'SKIP' 'Edge 서비스 없음' }
     foreach ($svc in $services) {
+        if ($KeepServices -contains $svc.Name) {
+            $ok = ($svc.Start -ne 'disabled')
+            $note = if ($ok) { ' (유지 대상)' } else { ' (꺼져 있으면 저장 암호를 채우지 못함, Apply 로 되살림)' }
+            Write-Step $(if ($ok) { 'OK' } else { 'WARN' }) "$($svc.Name): $($svc.Start), $($svc.State)$note"
+            continue
+        }
+        if ($AllowUpdate -and $UpdateServices -contains $svc.Name) {
+            $ok = ($svc.Start -ne 'disabled')
+            $note = if ($ok) { ' (업데이트 허용)' } else { ' (꺼져 있어 업데이트 불가)' }
+            Write-Step $(if ($ok) { 'OK' } else { 'WARN' }) "$($svc.Name): $($svc.Start), $($svc.State)$note"
+            continue
+        }
         $ok = ($svc.Start -eq 'disabled' -and $svc.State -eq 'Stopped')
         Write-Step $(if ($ok) { 'OK' } else { 'WARN' }) "$($svc.Name): $($svc.Start), $($svc.State)"
     }
 
     Write-Section '예약 작업 / 자동 실행'
     $tasks = Get-EdgeTasks
-    if ($tasks.Count -eq 0) { Write-Step 'OK' 'MicrosoftEdgeUpdate 작업 없음' }
+    if ($tasks.Count -eq 0) {
+        $line = if ($AllowUpdate) { 'MicrosoftEdgeUpdate 작업 없음(업데이트 후 다시 만들어짐)' } else { 'MicrosoftEdgeUpdate 작업 없음' }
+        Write-Step $(if ($AllowUpdate) { 'INFO' } else { 'OK' }) $line
+    }
     foreach ($task in $tasks) {
         $disabled = ("$($task.State)" -eq 'Disabled')
-        Write-Step $(if ($disabled) { 'OK' } else { 'WARN' }) "$($task.TaskName): $($task.State)"
+        $ok = if ($AllowUpdate) { -not $disabled } else { $disabled }
+        Write-Step $(if ($ok) { 'OK' } else { 'WARN' }) "$($task.TaskName): $($task.State)"
     }
     $entries = Get-EdgeRunEntries
     if ($entries.Count -eq 0) { Write-Step 'OK' 'MicrosoftEdgeAutoLaunch 항목 없음' }
@@ -1115,44 +1069,7 @@ function Invoke-Status {
     $others = @($current | Where-Object { $Flags -notcontains $_ })
     if ($others.Count -gt 0) { Write-Step 'INFO' "그 밖에 바꾼 flags: $($others -join ', ')" }
 
-    Write-Section '백업'
-    $backups = Get-EdgeBackups
-    Write-Step 'INFO' "위치: $BackupRoot"
-    $backupTask = Get-ScheduledTask -TaskName $BackupTaskName -ErrorAction SilentlyContinue
-    if (-not $backupTask) {
-        Write-Step 'INFO' '자동 백업 일정 없음(Schedule 로 등록)'
-    }
-    else {
-        $taskInfo = $backupTask | Get-ScheduledTaskInfo
-        Write-Step $(if ("$($backupTask.State)" -eq 'Disabled') { 'WARN' } else { 'OK' }) "$($backupTask.Description) [$($backupTask.State)]"
-        Write-Step 'INFO' "다음 실행: $($taskInfo.NextRunTime)"
-        # 267011 = 아직 한 번도 실행되지 않음
-        if ($taskInfo.LastTaskResult -ne 267011) {
-            Write-Step $(if ($taskInfo.LastTaskResult -eq 0) { 'INFO' } else { 'WARN' }) "마지막 실행: $($taskInfo.LastRunTime), 결과 코드 $($taskInfo.LastTaskResult)"
-        }
-    }
-    if ($backups.Count -eq 0) { Write-Step 'INFO' '백업 없음' }
-    else { Write-Step 'INFO' "$($backups.Count)개, 최근: $($backups[-1].Name)" }
     Write-Host ''
-}
-
-function Invoke-List {
-    $backups = Get-EdgeBackups
-    if ($backups.Count -eq 0) {
-        Write-Host "백업이 없습니다: $BackupRoot"
-        return
-    }
-    $backups | ForEach-Object {
-        $manifest = Read-Manifest $_.FullName
-        [pscustomobject]@{
-            Name     = $_.Name
-            Created  = $manifest.Created
-            Edge     = $manifest.EdgeVersion
-            Policies = @((Get-Content -LiteralPath (Join-Path $_.FullName 'policies.json') -Raw | ConvertFrom-Json).PSObject.Properties).Count
-            Flags    = @($manifest.Flags).Count
-            Files    = @($manifest.Files).Count
-        }
-    } | Format-Table -AutoSize
 }
 
 # =============================================================================
@@ -1160,15 +1077,9 @@ function Invoke-List {
 # =============================================================================
 
 switch ($Action) {
-    'Status'  { Invoke-Status }
-    'Apply'   { Invoke-Apply }
-    'Backup'  {
-        New-EdgeBackup -BackupLabel $Label | Out-Null
-        if ($KeepSpecified) { Remove-OldBackups -BackupLabel $Label -Count $Keep }
-    }
-    'Schedule'   { Invoke-Schedule }
-    'Unschedule' { Invoke-Unschedule }
-    'Restore' { Invoke-Restore }
-    'Revert'  { Invoke-Revert }
-    'List'    { Invoke-List }
+    'Status'      { Invoke-Status }
+    'Apply'       { Invoke-Apply }
+    'Revert'      { Invoke-Revert }
+    'Search'      { Invoke-Search }
+    'SearchReset' { Invoke-SearchReset }
 }
